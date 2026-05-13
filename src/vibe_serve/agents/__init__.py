@@ -12,10 +12,26 @@ from pathlib import Path
 from typing import Any
 
 from .base import AgentRunner
-from .cli_runner import CliAgentRunner
-from .deepagents_runner import DeepAgentsRunner
 
+# ``CliAgentRunner`` and ``DeepAgentsRunner`` are imported lazily to break a
+# circular import: ``vibe_serve.agent_runner`` imports
+# ``vibe_serve.agents.callbacks`` (which triggers this ``__init__``), and both
+# concrete runners import back from ``vibe_serve.agent_runner``. Importing
+# them eagerly here turned the cycle into an ImportError on the first entry
+# point that hits ``agent_runner`` first (e.g. the ``vibe-serve`` script).
 __all__ = ["AgentRunner", "DeepAgentsRunner", "CliAgentRunner", "build_agent_runner"]
+
+
+def __getattr__(name: str):
+    if name == "CliAgentRunner":
+        from .cli_runner import CliAgentRunner
+
+        return CliAgentRunner
+    if name == "DeepAgentsRunner":
+        from .deepagents_runner import DeepAgentsRunner
+
+        return DeepAgentsRunner
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def build_agent_runner(
@@ -77,6 +93,8 @@ def build_agent_runner(
                 "internal error: build_agent_runner called with backend='deepagents' "
                 "but no backends dict was provided"
             )
+        from .deepagents_runner import DeepAgentsRunner
+
         return DeepAgentsRunner(
             model=model,
             backends=backends,
@@ -109,6 +127,8 @@ def build_agent_runner(
         # cli_model overrides model.name for the CLI tool. If not set,
         # pass None so the CLI tool uses its own default.
         cli_model = (config.get("agent") or {}).get("cli_model")
+        from .cli_runner import CliAgentRunner
+
         return CliAgentRunner(
             provider=provider,
             model=cli_model,
