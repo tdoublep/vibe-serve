@@ -25,8 +25,8 @@ as `perf_metric` every round; do not substitute or invert it.
   `vllm`, no high-level `transformers-neuronx` / `optimum.neuron` model
   classes). The point is a bespoke implementation.
 - Run it on the NeuronCore through the AWS Neuron SDK's PyTorch support. Choose
-  an approach that is current and works for this hardware — consult the Neuron
-  skills / docs rather than assuming a particular API. Use **BF16**; do not run
+  an approach that is current and works for this hardware — consult the AWS
+  Neuron documentation rather than assuming a particular API. Use **BF16**; do not run
   the hot path on CPU or in `float32` (a server that loads but silently falls
   back to CPU is incorrect for this target).
 - NeuronCores execute compiled graphs and recompiling is expensive, so keep
