@@ -11,23 +11,30 @@ idioms, [`pytorch.md`](pytorch.md).
 
 ## The mental model
 
-A NeuronCore does **not** run eager PyTorch op-by-op like a GPU. The Neuron
-compiler (`neuronx-cc`) compiles a **graph for a fixed set of input shapes**
-into a **NEFF**, which the runtime executes on-device. Your job is to get the
-hot path into a compiled graph and keep its shapes stable.
+A NeuronCore has **no eager / op-by-op mode** like a GPU. Everything runs
+through **XLA graph compilation**: the Neuron compiler (`neuronx-cc`) compiles a
+graph **for a fixed set of input shapes** into a **NEFF** that the runtime
+executes on-device. Your job is to get the hot path into a compiled graph and
+keep its shapes stable. (You may see "TorchNeuron Native" eager / `torch.compile`
+in the `/latest/` AWS docs — it is forward-looking and **not in the released SDK
+/ inference DLC**, so don't plan around it. Even "eager-looking" `torch_xla`
+code still traces and compiles a graph per shape.)
 
-Two supported front-ends (pick one; don't mix on the hot path):
+The one practical front-end is **`torch-neuronx` (XLA-based)**:
 
-| Path | What it is | Use when |
-|:-----|:-----------|:---------|
-| **`torch-neuronx`** (XLA-based) | `torch_neuronx.trace(model, example_inputs)` → a compiled module you call like a function. Mature, predictable for inference. | A fixed-shape forward you can trace (e.g. a decode step at a bucketed shape). |
-| **TorchNeuron Native** | Eager execution + `torch.compile`, standard distributed APIs. The current direction AWS recommends for new work. | You want `torch.compile`-style ergonomics / eager debugging. |
+```python
+import torch_neuronx
+# Trace the forward at a FIXED shape → a compiled module you call per request.
+compiled = torch_neuronx.trace(model, example_inputs)      # one shape
+# or compile several buckets at once:
+compiled = torch_neuronx.bucket_model_trace(model, bucketed_example_inputs)
+```
 
-Both compile through `neuronx-cc` under the hood. **`torch_neuronx.trace` is the
-simplest path to a working server**: trace the model once per shape bucket, cache
-the result, call it per request. `torch.compile` is the forward-looking option —
-consult the current Neuron PyTorch docs for its exact backend/flags before
-relying on it.
+`torch_neuronx.trace` / `bucket_model_trace` is the simplest path to a working
+server: trace each shape bucket once, cache the NEFF, call the compiled module
+per request. Tensors are placed on the XLA device under the hood (`torch_xla`);
+use `xm.xla_device()` / the `torch_neuronx` placement helpers rather than
+hand-driving `mark_step()` on the hot path.
 
 ## Static shapes are the whole game
 
@@ -59,9 +66,10 @@ buckets are instant across rounds. Treat a cache miss on the hot path as a bug.
 
 - **dtype: BF16.** The tensor engine runs BF16 at full rate; FP32 is ~4× slower.
   Do not run the hot path in FP32 or on CPU.
-- **Device placement** is via the XLA device (`torch_xla`) under the hood for the
-  XLA path; for traced modules you pass tensors to the compiled callable. Use the
-  current SDK's documented placement API rather than hand-managing XLA steps.
+- **Device placement** is via the XLA device (`torch_xla`); for traced modules
+  you pass tensors to the compiled callable (`torch_neuronx.move_trace_to_device`
+  handles weights). There is no eager device to "just `.to('neuron')`" — the
+  trace is the device path.
 - **Weights**: load with `transformers` / `safetensors` on CPU, then let the
   trace/compile move them on-device. Build your own `nn.Module` with explicit
   layers (see [`pytorch.md`](pytorch.md) for fusion/remapping patterns) — the
