@@ -87,6 +87,7 @@ class DockerSandbox(BaseSandbox):
         gpus: str | None = None,
         devices: list[str] | None = None,
         entrypoint: str | None = None,
+        shm_size: str | None = None,
         default_timeout: int = 300,
         start_timeout: int = 120,
         max_output_bytes: int = 100_000,
@@ -114,6 +115,11 @@ class DockerSandbox(BaseSandbox):
                 — required for images like the AWS Neuron DLC whose entrypoint
                 would otherwise launch a model server and ignore our command.
                 ``None`` (default) leaves the image entrypoint untouched.
+            shm_size: Value for ``--shm-size`` (e.g. ``"16g"``).  Docker's
+                default ``/dev/shm`` is 64 MB, which ML compilers/runtimes
+                (e.g. ``neuronx-cc``, PyTorch dataloaders) exhaust with
+                "No space left on device".  ``None`` (default) uses Docker's
+                default.
             default_timeout: Default command timeout in seconds.
             start_timeout: Timeout in seconds for the initial ``docker run``.
                 This bounds hidden image pulls or Docker daemon stalls before
@@ -135,6 +141,7 @@ class DockerSandbox(BaseSandbox):
         self._gpus = gpus
         self._devices: list[str] = list(devices or [])
         self._entrypoint = entrypoint
+        self._shm_size = shm_size
         self._default_timeout = default_timeout
         self._start_timeout = start_timeout
         self._max_output_bytes = max_output_bytes
@@ -294,6 +301,9 @@ class DockerSandbox(BaseSandbox):
         if self._entrypoint is not None:
             cmd.extend(["--entrypoint", self._entrypoint])
 
+        if self._shm_size is not None:
+            cmd.extend(["--shm-size", self._shm_size])
+
         for host_path, container_path, readonly in self._bind_mounts:
             mount = f"{host_path}:{container_path}"
             if readonly:
@@ -356,6 +366,7 @@ class DockerSandbox(BaseSandbox):
             "gpus": self._gpus,
             "devices": list(self._devices),
             "entrypoint": self._entrypoint,
+            "shm_size": self._shm_size,
             "bind_mounts": [
                 [host, container, ro]
                 for host, container, ro in self._bind_mounts

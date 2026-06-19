@@ -652,3 +652,27 @@ class TestEntrypointOverride:
         sandbox.start()
         cmd = mock_run.call_args_list[0][0][0]
         assert "--entrypoint" not in cmd
+
+
+class TestShmSize:
+    @patch("subprocess.run")
+    def test_shm_size_emitted(self, mock_run, tmp_path):
+        sandbox = DockerSandbox(
+            host_workspace=str(tmp_path / "workspace"),
+            image="img", shm_size="16g",
+        )
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="abc123\n", stderr=""
+        )
+        sandbox.start()
+        cmd = mock_run.call_args_list[0][0][0]
+        assert "--shm-size" in cmd
+        assert cmd[cmd.index("--shm-size") + 1] == "16g"
+        assert sandbox._metadata["shm_size"] == "16g"
+
+    @patch("subprocess.run")
+    def test_no_shm_size_by_default(self, mock_run, tmp_path):
+        sandbox = DockerSandbox(host_workspace=str(tmp_path / "workspace"), image="img")
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="abc\n", stderr="")
+        sandbox.start()
+        assert "--shm-size" not in mock_run.call_args_list[0][0][0]

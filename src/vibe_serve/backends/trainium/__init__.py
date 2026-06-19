@@ -47,6 +47,12 @@ _DEFAULT_IMAGE = (
     "2.9.0-neuronx-py312-sdk2.30.0-ubuntu24.04"
 )
 
+# Docker's default /dev/shm is 64 MB; neuronx-cc and the Neuron runtime use
+# shared memory and exhaust it ("No space left on device") when compiling a
+# real model across shape buckets. trn2 instances have ample RAM, so give the
+# container a generous shm.
+_DEFAULT_SHM_SIZE = "16g"
+
 # Persistent neuronx-cc compile cache, bind-mounted from the host so
 # compiles (minutes each) survive container restarts and carry across
 # rounds.  Kept *outside* /workspace so the git-tracked workspace doesn't
@@ -155,6 +161,8 @@ class TrainiumBackend:
                 # so the sandbox container idles on `sleep infinity` and we can
                 # exec agent commands into it.
                 entrypoint="",
+                # neuronx-cc needs far more than Docker's default 64 MB /dev/shm.
+                shm_size=_DEFAULT_SHM_SIZE,
                 bind_mounts=bind_mounts,
                 passthrough_paths=passthrough_paths,
                 env=env,
