@@ -24,6 +24,7 @@ from vibe_serve.agent_runner import (
     _run_typed_agent,
 )
 from vibe_serve.agents.callbacks import AgentLogger
+from vibe_serve.guardrails import AgentGuardrailsMiddleware
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -84,6 +85,7 @@ class DeepAgentsRunner:
             response_format=AutoStrategy(response_cls),
             checkpointer=checkpointer,
             tools=tools,
+            middleware=[AgentGuardrailsMiddleware(backend=backend)],
         )
         _log_agent_config(agent, label, self._run_log_file)
 

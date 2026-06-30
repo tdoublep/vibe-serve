@@ -10,6 +10,7 @@ import pytest
 from vibe_serve.agents import build_agent_runner
 from vibe_serve.agents.cli_runner import CliAgentRunner
 from vibe_serve.agents.deepagents_runner import DeepAgentsRunner
+from vibe_serve.agents.langchain_runner import LangChainAgentRunner
 from vibe_serve.agents.callbacks import AgentLogger
 from vibe_serve.config import Config
 from vibe_serve.schemas import (
@@ -1181,3 +1182,199 @@ class TestBuildAgentRunnerBackendSelection:
         runner = self._build(_agent_config(backend="cli", cli_provider="claude"))
         assert isinstance(runner, CliAgentRunner)
         assert runner._provider == "claude"
+
+    def test_langchain_backend_can_be_selected(self):
+        runner = build_agent_runner(
+            _agent_config(backend="langchain"),
+            agent_backend=None,
+            cli_provider=None,
+            backends={"implementer": object(), "judge": object(), "perf_eval": object()},
+            skills=[],
+            skill_source_dirs=[],
+            model=None,
+            model_name="",
+            run_log_file=None,
+            use_docker=False,
+        )
+        assert isinstance(runner, LangChainAgentRunner)
+        assert runner.backend_name == "langchain"
+
+
+class TestLangChainAgentRunner:
+    """Smoke tests for :class:`LangChainAgentRunner` construction and dispatch."""
+
+    def test_langchain_runner_returns_parsed_response_from_text(self, tmp_path):
+        """Happy path: the agent's last AI message contains valid JSON for the
+        response_cls, so the parse-from-text path returns it directly."""
+        from unittest.mock import patch, MagicMock
+
+        pass_response_json = (
+            '{"analysis": "looks good", "feedback": "", "verdict": "pass"}'
+        )
+
+        with patch(
+            "vibe_serve.agents.langchain_runner.create_agent"
+        ) as mock_create_agent, patch.object(
+            LangChainAgentRunner, "_stream_agent", return_value=pass_response_json
+        ):
+            mock_create_agent.return_value = MagicMock(name="agent")
+            runner = LangChainAgentRunner(
+                model=MagicMock(name="model"),
+                backends={
+                    "implementer": MagicMock(name="impl-backend"),
+                    "judge": MagicMock(name="judge-backend"),
+                    "perf_eval": MagicMock(name="perf-backend"),
+                },
+                skills=[],
+                model_name="m",
+                run_log_file=None,
+            )
+            result = runner.invoke(
+                kind="judge",
+                workspace=tmp_path,
+                system_prompt="sys",
+                user_prompt="usr",
+                response_cls=JudgeResponse,
+                fallback_factory=_judge_fallback,
+                round_label="judge #1",
+            )
+
+        assert isinstance(result, JudgeResponse)
+        assert result.verdict == Verdict.PASS
+        assert result.analysis == "looks good"
+
+    def test_langchain_runner_falls_back_to_forced_tool_call(self, tmp_path):
+        """When the agent's text isn't parseable JSON, the runner must fire
+        the forced-tool-call extraction path to get a structured response."""
+        from unittest.mock import patch, MagicMock
+
+        pass_response = JudgeResponse(
+            analysis="forced", feedback="", verdict=Verdict.PASS,
+        )
+
+        with patch(
+            "vibe_serve.agents.langchain_runner.create_agent"
+        ) as mock_create_agent, patch.object(
+            LangChainAgentRunner, "_stream_agent", return_value="not valid json"
+        ), patch(
+            "vibe_serve.agents.langchain_runner._extract_via_forced_tool_call",
+            return_value=pass_response,
+        ) as mock_forced:
+            mock_create_agent.return_value = MagicMock(name="agent")
+            runner = LangChainAgentRunner(
+                model=MagicMock(name="model"),
+                backends={
+                    "implementer": MagicMock(name="impl-backend"),
+                    "judge": MagicMock(name="judge-backend"),
+                    "perf_eval": MagicMock(name="perf-backend"),
+                },
+                skills=[],
+                model_name="m",
+                run_log_file=None,
+            )
+            result = runner.invoke(
+                kind="judge",
+                workspace=tmp_path,
+                system_prompt="sys",
+                user_prompt="usr",
+                response_cls=JudgeResponse,
+                fallback_factory=_judge_fallback,
+                round_label="judge #1",
+            )
+
+        assert result is pass_response
+        assert mock_forced.call_count == 1
+        _, kwargs = mock_forced.call_args
+        assert kwargs["response_cls"] is JudgeResponse
+        assert kwargs["last_ai_message"] == "not valid json"
+
+    def test_langchain_runner_returns_fallback_when_both_paths_fail(self, tmp_path):
+        """If both JSON parsing AND forced-tool extraction fail, return the
+        fallback factory's value — matches DeepAgentsRunner's contract."""
+        from unittest.mock import patch, MagicMock
+
+        with patch(
+            "vibe_serve.agents.langchain_runner.create_agent"
+        ) as mock_create_agent, patch.object(
+            LangChainAgentRunner, "_stream_agent", return_value="not valid json"
+        ), patch(
+            "vibe_serve.agents.langchain_runner._extract_via_forced_tool_call",
+            return_value=None,
+        ):
+            mock_create_agent.return_value = MagicMock(name="agent")
+            runner = LangChainAgentRunner(
+                model=MagicMock(name="model"),
+                backends={
+                    "implementer": MagicMock(name="impl-backend"),
+                    "judge": MagicMock(name="judge-backend"),
+                    "perf_eval": MagicMock(name="perf-backend"),
+                },
+                skills=[],
+                model_name="m",
+                run_log_file=None,
+            )
+            result = runner.invoke(
+                kind="judge",
+                workspace=tmp_path,
+                system_prompt="sys",
+                user_prompt="usr",
+                response_cls=JudgeResponse,
+                fallback_factory=_judge_fallback,
+                round_label="judge #1",
+            )
+
+        assert isinstance(result, JudgeResponse)
+        assert result.verdict == Verdict.FAIL
+        assert result.analysis == "fallback"
+
+    def test_langchain_runner_picks_backend_by_kind(self, tmp_path):
+        """The runner must pass the kind-specific backend to FilesystemMiddleware."""
+        from unittest.mock import patch, MagicMock
+
+        impl_backend = MagicMock(name="impl-backend")
+        judge_backend = MagicMock(name="judge-backend")
+        perf_backend = MagicMock(name="perf-backend")
+
+        captured_backends: list = []
+
+        def _capture_create_agent(*args, **kwargs):
+            middleware_list = kwargs.get("middleware") or []
+            for m in middleware_list:
+                if type(m).__name__ == "FilesystemMiddleware":
+                    captured_backends.append(m.backend)
+                    break
+            return MagicMock(name="agent")
+
+        pass_response_json = (
+            '{"analysis": "ok", "feedback": "", "verdict": "pass"}'
+        )
+
+        with patch(
+            "vibe_serve.agents.langchain_runner.create_agent",
+            side_effect=_capture_create_agent,
+        ), patch.object(
+            LangChainAgentRunner, "_stream_agent", return_value=pass_response_json
+        ):
+            runner = LangChainAgentRunner(
+                model=MagicMock(name="model"),
+                backends={
+                    "implementer": impl_backend,
+                    "judge": judge_backend,
+                    "perf_eval": perf_backend,
+                },
+                skills=[],
+                model_name="m",
+                run_log_file=None,
+            )
+            for kind in ("implementer", "judge", "perf_eval"):
+                runner.invoke(
+                    kind=kind,
+                    workspace=tmp_path,
+                    system_prompt="sys",
+                    user_prompt="usr",
+                    response_cls=JudgeResponse,
+                    fallback_factory=_judge_fallback,
+                    round_label=f"{kind} #1",
+                )
+
+        assert captured_backends == [impl_backend, judge_backend, perf_backend]

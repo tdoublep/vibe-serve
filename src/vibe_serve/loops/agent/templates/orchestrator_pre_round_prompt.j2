@@ -22,7 +22,9 @@ Read `progress.md` in your working directory. The end of the file has the most r
 
 ## Skills
 
-A library of curated technique-specific skills is installed in your working directory. Your CLI's native skill mechanism exposes their names + short descriptions; activate (open) only the ones whose description matches the active task. Don't preload them — let the agent harness page them in on demand.
+A curated reference library lives in your working directory at `serving-systems/`. The index is `serving-systems/SKILL.md` — it lists every topic and the path to its reference file. Individual references live at `serving-systems/references/<tier>/<topic>.md`, where `<tier>` is one of `algorithms`, `backends`, `engines`, `frameworks`, `hardware`, `models`, `tooling`.
+
+Read `serving-systems/SKILL.md` once if you need to discover what's available, then read specific `references/<tier>/<topic>.md` files by name as the active task demands. Do **not** enumerate the `references/` subdirectories with `ls` / list-dir tools — the index already tells you what exists. Ignore any separate "Available Skills" section your runtime may inject; this library is the authoritative source.
 
 ## When to request a profile
 

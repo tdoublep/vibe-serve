@@ -22,7 +22,13 @@ from .base import AgentRunner
 # concrete runners import back from ``vibe_serve.agent_runner``. Importing
 # them eagerly here turned the cycle into an ImportError on the first entry
 # point that hits ``agent_runner`` first (e.g. the ``vibe-serve`` script).
-__all__ = ["AgentRunner", "DeepAgentsRunner", "CliAgentRunner", "build_agent_runner"]
+__all__ = [
+    "AgentRunner",
+    "DeepAgentsRunner",
+    "CliAgentRunner",
+    "LangChainAgentRunner",
+    "build_agent_runner",
+]
 
 
 def __getattr__(name: str):
@@ -34,6 +40,10 @@ def __getattr__(name: str):
         from .deepagents_runner import DeepAgentsRunner
 
         return DeepAgentsRunner
+    if name == "LangChainAgentRunner":
+        from .langchain_runner import LangChainAgentRunner
+
+        return LangChainAgentRunner
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -98,6 +108,22 @@ def build_agent_runner(
         from .deepagents_runner import DeepAgentsRunner
 
         return DeepAgentsRunner(
+            model=model,
+            backends=backends,
+            skills=skills,
+            model_name=model_name,
+            run_log_file=run_log_file,
+        )
+
+    if backend == "langchain":
+        if backends is None:
+            raise SystemExit(
+                "internal error: build_agent_runner called with backend='langchain' "
+                "but no backends dict was provided"
+            )
+        from .langchain_runner import LangChainAgentRunner
+
+        return LangChainAgentRunner(
             model=model,
             backends=backends,
             skills=skills,

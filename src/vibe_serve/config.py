@@ -100,6 +100,26 @@ class OpenAICompatCfg(_Strict):
         default="no-key",
         description="API key for the endpoint; 'no-key' for unauthenticated local servers.",
     )
+    max_tokens: int | None = Field(
+        default=None,
+        description=(
+            "Per-call output-token cap passed to ChatOpenAI. Required when targeting "
+            "reasoning models (e.g. Nemotron with --reasoning-parser nemotron_v3) whose "
+            "chain-of-thought is otherwise unbounded and will fill the entire context "
+            "window before emitting a tool call."
+        ),
+    )
+    temperature: float | None = Field(
+        default=None,
+        description=(
+            "Sampling temperature for ChatOpenAI. When unset, ChatOpenAI's own "
+            "default (typically 0.7) applies — matching what the vLLM endpoint "
+            "would do server-side and avoiding fixed-point loops that "
+            "temperature=0.0 induces in reasoning models (empty tool results "
+            "produce identical next-token distributions, so the model re-issues "
+            "the same failing call indefinitely)."
+        ),
+    )
 
 
 class _CredEnvProviderCfg(_Strict):
@@ -152,8 +172,10 @@ class AgentCfg(_Strict):
     backend: str | None = Field(
         default=None,
         description=(
-            "Agent runner backend: 'cli' (drive an external coding-agent CLI) or "
-            "'deepagents'. The --agent-backend flag overrides; defaults to 'cli'."
+            "Agent runner backend: 'cli' (drive an external coding-agent CLI), "
+            "'langchain' (thin langchain.create_agent wrapper), or 'deepagents' "
+            "(deepagents.create_deep_agent — legacy; stalls on claude-opus-4-7). "
+            "The --agent-backend flag overrides; defaults to 'cli'."
         ),
     )
     cli_provider: str | None = Field(

@@ -4,6 +4,18 @@ from pathlib import Path
 from vibe_serve.config import Config, ThinkingCfg
 from vibe_serve.constants import _ANTHROPIC_PREFIXES, _GOOGLE_PREFIXES, _OPENAI_PREFIXES
 
+# Per-call output-token cap for Anthropic models. langchain-anthropic's
+# default falls back to 4096 for any model not in its profile registry
+# (claude-opus-4-7 was missing as of session 10), which truncates
+# tool_use blocks whose `content` argument is a large file body —
+# write_file(file_path=..., content=<25-40 KB main.py>) arrives at the
+# pydantic validator with `content` missing entirely because the SDK
+# never finished emitting it. Match the value langchain-anthropic ships
+# for claude-opus-4-6 — the nearest neighbour to claude-opus-4-7 in the
+# registry — so unknown models in this family inherit the same ceiling
+# as known ones. See REPRODUCTION_NOTES_session10.md for the trace.
+_ANTHROPIC_MAX_OUTPUT_TOKENS = 128000
+
 
 def _is_google_model(model_name: str) -> bool:
     return any(model_name.startswith(p) for p in _GOOGLE_PREFIXES)
@@ -21,6 +33,21 @@ def _has_thinking(thinking: ThinkingCfg) -> bool:
     return bool(thinking.level or thinking.budget)
 
 
+def _build_anthropic_model(model_name: str):
+    """Instantiate a ChatAnthropic with an explicit large ``max_tokens``.
+
+    Returning a configured instance (not the ``"anthropic:<name>"`` string)
+    lets us pin ``max_tokens`` past langchain-anthropic's 4096 fallback
+    for model names absent from its profile registry.
+    """
+    from langchain.chat_models import init_chat_model
+
+    return init_chat_model(
+        f"anthropic:{model_name}",
+        max_tokens=_ANTHROPIC_MAX_OUTPUT_TOKENS,
+    )
+
+
 def _build_model(config: Config):
     """Build the chat model from a parsed :class:`Config`."""
     model_name = config.model.name
@@ -35,7 +62,7 @@ def _build_model(config: Config):
             raise ValueError(f"{model_name!r} is not a Claude model (provider='anthropic')")
         if _has_thinking(thinking):
             raise ValueError("Thinking is not supported for provider 'anthropic'")
-        return f"anthropic:{model_name}"
+        return _build_anthropic_model(model_name)
 
     if provider == "google-genai":
         if not _is_google_model(model_name):
@@ -59,7 +86,7 @@ def _build_model(config: Config):
         if _is_anthropic_model(model_name):
             if _has_thinking(thinking):
                 raise ValueError("Thinking is not supported for provider 'anthropic'")
-            return f"anthropic:{model_name}"
+            return _build_anthropic_model(model_name)
         if _is_google_model(model_name):
             if _has_thinking(thinking):
                 raise ValueError("Thinking is not supported for provider 'google-genai'")
@@ -89,11 +116,17 @@ def _build_openai_compatible_model(model_name: str, config: Config):
         )
     api_key = oc.api_key
 
-    return ChatOpenAI(
+    kwargs: dict = dict(
         model=model_name,
         base_url=base_url,
         api_key=api_key,
+        model_kwargs={"parallel_tool_calls": False},
     )
+    if oc.temperature is not None:
+        kwargs["temperature"] = oc.temperature
+    if oc.max_tokens is not None:
+        kwargs["max_tokens"] = oc.max_tokens
+    return ChatOpenAI(**kwargs)
 
 
 def _build_vertex_model(model_name: str, config: Config, thinking: ThinkingCfg):

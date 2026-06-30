@@ -61,7 +61,11 @@ Failing to address this and producing another flat-perf round buys you no inform
 
 ## Skills
 
-A library of curated technique-specific skills is installed in your working directory. Your CLI's native skill mechanism exposes their names + short descriptions; activate (open) the ones whose description matches the work this round needs — typical roadmap items map to one or two skills (e.g. "Add CUDA graphs to verifier decode" → `cuda-graph` and possibly `flashattention` / `flashinfer`; "EAGLE3 wiring" → `speculative-decoding`; "xgrammar fast path" → `structured-output`). Don't try to enumerate or preload them.
+A curated reference library lives in your working directory at `serving-systems/`. The index is `serving-systems/SKILL.md` — it lists every topic and the path to its reference file. Individual references live at `serving-systems/references/<tier>/<topic>.md`, where `<tier>` is one of `algorithms`, `backends`, `engines`, `frameworks`, `hardware`, `models`, `tooling`.
+
+Read `serving-systems/SKILL.md` once if you need to discover what's available, then read specific `references/<tier>/<topic>.md` files by name as this round demands. Typical roadmap items map to one or two references — e.g. "Add CUDA graphs to verifier decode" → `references/backends/cuda-graph.md` and possibly `references/backends/flashattention.md` / `references/backends/flashinfer.md`; "EAGLE3 wiring" → `references/algorithms/speculative-decoding.md`; "xgrammar fast path" → `references/algorithms/structured-output.md`.
+
+Do **not** enumerate the `references/` subdirectories with `ls` / list-dir tools — the index already tells you what exists. Ignore any separate "Available Skills" section your runtime may inject; this library is the authoritative source.
 
 {% if profiler_summary %}
 ## Profiler summary (just collected this round)

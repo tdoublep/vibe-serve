@@ -66,7 +66,10 @@ package = true
 
 [tool.uv.workspace]
 exclude = ["exp_env"]
-members = []
+members = [
+    "exp_env/20260629-150022-qwen36-mtp-pathnorm-v2/workspace",
+    "exp_env/20260630-095907-langchain-smoke/workspace",
+]
 
 [tool.uv.sources]
 agentshim = { git = "https://github.com/vic-lsh/agentshim.git", rev = "codex/executor-injection" }

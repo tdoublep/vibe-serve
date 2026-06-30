@@ -244,7 +244,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--agent-backend",
-        choices=["deepagents", "cli"],
+        choices=["deepagents", "langchain", "cli"],
         default=None,
         help=(
             "Which agent backend implementation to use. Overrides "
